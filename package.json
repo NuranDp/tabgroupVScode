@@ -73,35 +73,43 @@
     "commands": [
       {
         "command": "tabgroupview.addToGroup",
-        "title": "Add to Group"
+        "title": "Add to Group",
+        "icon": "$(add)"
       },
       {
         "command": "tabgroupview.removeFromGroup",
-        "title": "Remove"
+        "title": "Remove",
+        "icon": "$(trash)"
       },
       {
         "command": "tabgroupview.deleteGroup",
-        "title": "Delete"
+        "title": "Delete",
+        "icon": "$(trash)"
       },
       {
         "command": "tabgroupview.renameGroup",
-        "title": "Rename"
+        "title": "Rename",
+        "icon": "$(edit)"
       },
       {
         "command": "tabgroupview.switchSortMode",
-        "title": "Sort"
+        "title": "Sort",
+        "icon": "$(sort-precedence)"
       },
       {
         "command": "tabgroupview.switchGroupSortMode",
-        "title": "Sort (Group)"
+        "title": "Sort (Group)",
+        "icon": "$(sort-precedence)"
       },
       {
         "command": "tabgroupview.pinGroup",
-        "title": "Pin Group"
+        "title": "Pin Group",
+        "icon": "$(pin)"
       },
       {
         "command": "tabgroupview.unpinGroup",
-        "title": "Unpin Group"
+        "title": "Unpin Group",
+        "icon": "$(pinned)"
       }
     ]
   },
