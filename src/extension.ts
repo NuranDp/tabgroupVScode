@@ -147,7 +147,7 @@ export function activate(context: vscode.ExtensionContext) {
 				{ label: 'Name Descending (Z-A)', mode: SortMode.NAME_DESC }
 			];
 			const picked = await vscode.window.showQuickPick(options, {
-				placeHolder: 'Select sorting mode for files in groups'
+				placeHolder: 'Select global sorting mode for files in groups'
 			});
 			if (!picked) return;
 			sortMode = picked.mode;
@@ -164,7 +164,8 @@ export function activate(context: vscode.ExtensionContext) {
 			const options = [
 				{ label: 'Manual (draggable)', mode: SortMode.MANUAL },
 				{ label: 'Name Ascending (A-Z)', mode: SortMode.NAME_ASC },
-				{ label: 'Name Descending (Z-A)', mode: SortMode.NAME_DESC }
+				{ label: 'Name Descending (Z-A)', mode: SortMode.NAME_DESC },
+				{ label: 'Use Global', mode: undefined }
 			];
 			const picked = await vscode.window.showQuickPick(options, {
 				placeHolder: `Select sorting mode for group "${group.label}"`
@@ -205,7 +206,8 @@ class TabGroupTreeProvider implements vscode.TreeDataProvider<TreeItem> {
 			if (!group) return Promise.resolve([]);
 
 			let files = [...group.files];
-			const sortMode = group.sortMode ?? SortMode.MANUAL;
+			// Use group.sortMode if set, otherwise global sortMode
+			const sortMode = group.sortMode ?? this.getSortMode();
 
 			if (sortMode === SortMode.NAME_ASC) {
 				files.sort((a, b) => {
