@@ -61,7 +61,10 @@ export function activate(context: vscode.ExtensionContext) {
 			if (item.contextValue !== 'file') return;
 
 			for (const group of groups) {
-				const idx = group.files.indexOf(item.label);
+				const filePath = item.resourceUri?.fsPath;
+				if (!filePath) return;
+
+				const idx = group.files.indexOf(filePath);
 				if (idx !== -1) {
 					group.files.splice(idx, 1);
 					saveGroups(context, groups);
@@ -69,6 +72,7 @@ export function activate(context: vscode.ExtensionContext) {
 					treeDataProvider.refresh();
 					break;
 				}
+
 			}
 		}),
 
@@ -143,22 +147,30 @@ class TabGroupTreeProvider implements vscode.TreeDataProvider<TreeItem> {
 			// Find group by label
 			const group = this.groups.find(g => g.label === element.label);
 			if (!group) return Promise.resolve([]);
-			// Return files in the group
-			return Promise.resolve(group.files.map(filePath => {
+
+			// Map to TreeItems
+			const fileItems = group.files.map(filePath => {
 				const fileName = vscode.workspace.asRelativePath(filePath, false).split(/[\\/]/).pop() || filePath;
 				const item = new TreeItem(fileName, vscode.TreeItemCollapsibleState.None, 'file');
-				item.resourceUri = vscode.Uri.file(filePath); // preserve icon
+				item.resourceUri = vscode.Uri.file(filePath); // preserves VSCode icons
 				item.command = {
 					command: 'vscode.open',
 					title: 'Open File',
 					arguments: [vscode.Uri.file(filePath)]
 				};
+				item.tooltip = filePath;
+				item.description = vscode.workspace.asRelativePath(filePath, false);
 				return item;
-			}));
+			});
 
+			// Sort alphabetically by label
+			fileItems.sort((a, b) => a.label.localeCompare(b.label));
+
+			return Promise.resolve(fileItems);
 		}
 		return Promise.resolve([]);
 	}
+
 
 	refresh(): void {
 		this._onDidChangeTreeData.fire(undefined);
