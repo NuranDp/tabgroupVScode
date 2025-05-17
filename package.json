@@ -50,6 +50,16 @@
           "command": "tabgroupview.switchGroupSortMode",
           "when": "view == tabGroupsView && viewItem == group",
           "group": "inline"
+        },
+        {
+          "command": "tabgroupview.pinGroup",
+          "when": "view == tabGroupsView && viewItem == group",
+          "group": "inline"
+        },
+        {
+          "command": "tabgroupview.unpinGroup",
+          "when": "view == tabGroupsView && viewItem == groupPinned",
+          "group": "inline"
         }
       ],
       "view/title": [
@@ -84,6 +94,14 @@
       {
         "command": "tabgroupview.switchGroupSortMode",
         "title": "Sort (Group)"
+      },
+      {
+        "command": "tabgroupview.pinGroup",
+        "title": "Pin Group"
+      },
+      {
+        "command": "tabgroupview.unpinGroup",
+        "title": "Unpin Group"
       }
     ]
   },

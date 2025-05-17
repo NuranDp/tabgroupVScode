@@ -4,6 +4,7 @@ interface TabGroup {
 	label: string;
 	files: string[];
 	sortMode?: SortMode; // Per-group sorting mode
+	pinned?: boolean; // Add this property
 }
 
 enum SortMode {
@@ -120,7 +121,7 @@ export function activate(context: vscode.ExtensionContext) {
 			const oldLabel = item.label;
 			const newLabel = await vscode.window.showInputBox({
 				prompt: 'Enter new group name',
-				value: oldLabel,
+				value: typeof oldLabel === 'string' ? oldLabel : '',
 				validateInput: (value) => {
 					if (!value.trim()) return 'Group name cannot be empty';
 					if (groups.some(g => g.label === value && value !== oldLabel)) return 'Group name already exists';
@@ -175,7 +176,39 @@ export function activate(context: vscode.ExtensionContext) {
 			saveGroups(context, groups);
 			treeDataProvider.refresh();
 		}),
+
+		vscode.commands.registerCommand('tabgroupview.pinGroup', async (item: TreeItem) => {
+			if (item.contextValue !== 'group') return;
+			const group = groups.find(g => g.label === item.label);
+			if (!group) return;
+			group.pinned = true;
+			saveGroups(context, groups);
+			treeDataProvider.refresh();
+		}),
+
+		vscode.commands.registerCommand('tabgroupview.unpinGroup', async (item: TreeItem) => {
+			if (item.contextValue !== 'groupPinned') return;
+			const group = groups.find(g => g.label === item.label);
+			if (!group) return;
+			group.pinned = false;
+			saveGroups(context, groups);
+			treeDataProvider.refresh();
+		}),
 	);
+}
+
+// Custom TreeItem class to ensure contextValue and id are set
+class TreeItem extends vscode.TreeItem {
+	constructor(
+		public readonly label: string,
+		public readonly collapsibleState: vscode.TreeItemCollapsibleState,
+		public readonly contextValue: string,
+		public readonly id?: string
+	) {
+		super(label, collapsibleState);
+		this.contextValue = contextValue;
+		if (id) this.id = id;
+	}
 }
 
 class TabGroupTreeProvider implements vscode.TreeDataProvider<TreeItem> {
@@ -187,7 +220,7 @@ class TabGroupTreeProvider implements vscode.TreeDataProvider<TreeItem> {
 	constructor(
 		private groups: TabGroup[],
 		private context: vscode.ExtensionContext,
-		private getSortMode: () => SortMode // Keep for compatibility, but not used for files now
+		private getSortMode: () => SortMode
 	) {
 		this.dragAndDropController = new TabGroupDragAndDropController(groups, context, this.refresh.bind(this), this.getSortMode);
 	}
@@ -197,16 +230,29 @@ class TabGroupTreeProvider implements vscode.TreeDataProvider<TreeItem> {
 
 	getChildren(element?: TreeItem): Thenable<TreeItem[]> {
 		if (!element) {
-			// Top level: group nodes
-			return Promise.resolve(this.groups.map(
-				group => new TreeItem(group.label, vscode.TreeItemCollapsibleState.Collapsed, 'group')
+			// Top level: group nodes, pinned first
+			const sortedGroups = [
+				...this.groups.filter(g => g.pinned),
+				...this.groups.filter(g => !g.pinned)
+			];
+			return Promise.resolve(sortedGroups.map(
+				group => {
+					const contextValue = group.pinned ? 'groupPinned' : 'group';
+					const item = new TreeItem(
+						group.label,
+						vscode.TreeItemCollapsibleState.Collapsed,
+						contextValue,
+						`group:${group.label}` // Stable id
+					);
+					if (group.pinned) item.description = 'Pinned';
+					return item;
+				}
 			));
-		} else if (element.contextValue === 'group') {
+		} else if (element.contextValue === 'group' || element.contextValue === 'groupPinned') {
 			const group = this.groups.find(g => g.label === element.label);
 			if (!group) return Promise.resolve([]);
 
 			let files = [...group.files];
-			// Use group.sortMode if set, otherwise global sortMode
 			const sortMode = group.sortMode ?? this.getSortMode();
 
 			if (sortMode === SortMode.NAME_ASC) {
@@ -226,7 +272,12 @@ class TabGroupTreeProvider implements vscode.TreeDataProvider<TreeItem> {
 
 			const fileItems = files.map(filePath => {
 				const fileName = vscode.workspace.asRelativePath(filePath, false).split(/[\\/]/).pop() || filePath;
-				const item = new TreeItem(fileName, vscode.TreeItemCollapsibleState.None, 'file');
+				const item = new TreeItem(
+					fileName,
+					vscode.TreeItemCollapsibleState.None,
+					'file',
+					`file:${group.label}:${filePath}` // Stable id for files
+				);
 				item.resourceUri = vscode.Uri.file(filePath);
 				item.command = {
 					command: 'vscode.open',
@@ -305,19 +356,5 @@ class TabGroupDragAndDropController implements vscode.TreeDragAndDropController<
 
 		saveGroups(this.context, this.groups);
 		this.refresh();
-	}
-}
-
-class TreeItem extends vscode.TreeItem {
-	constructor(
-		public readonly label: string,
-		public readonly collapsibleState: vscode.TreeItemCollapsibleState,
-		public readonly contextValue: 'group' | 'file' = 'group'
-	) {
-		super(label, collapsibleState);
-		this.contextValue = contextValue;
-		if (contextValue === 'file') {
-			this.resourceUri = vscode.Uri.file(label); // Enable icon + DnD support
-		}
 	}
 }
