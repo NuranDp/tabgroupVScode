@@ -256,47 +256,55 @@ class TabGroupDragAndDropController implements vscode.TreeDragAndDropController<
 		private groups: TabGroup[],
 		private context: vscode.ExtensionContext,
 		private refresh: () => void,
-		private getSortMode: () => SortMode // Keep for compatibility
+		private getSortMode: () => SortMode
 	) { }
 
 	handleDrag(source: TreeItem[], dataTransfer: vscode.DataTransfer): void | Thenable<void> {
-		// Only allow drag if all selected files are from groups with MANUAL sortMode
-		const allManual = source.every(s => {
-			if (s.contextValue !== 'file') return false;
-			const parentGroup = this.groups.find(g => g.files.includes(s.resourceUri?.fsPath || ''));
-			return parentGroup?.sortMode !== undefined ? parentGroup.sortMode === SortMode.MANUAL : true;
-		});
-		if (!allManual) return;
-		const files = source.filter(s => s.contextValue === 'file').map(s => s.label);
-		dataTransfer.set('application/vnd.code.tree.tabGroupsView', new vscode.DataTransferItem(files.join(',')));
+		const files = source.filter(s => s.contextValue === 'file').map(s => s.resourceUri?.fsPath || '');
+		dataTransfer.set('application/vnd.code.tree.tabGroupsView', new vscode.DataTransferItem(JSON.stringify(files)));
 	}
 
-	async handleDrop(target: TreeItem | undefined, dataTransfer: vscode.DataTransfer): Promise<void> {
-		if (!target || target.contextValue !== 'group') return;
-
-		const targetGroup = this.groups.find(g => g.label === target.label);
-		if (!targetGroup || (targetGroup.sortMode ?? SortMode.MANUAL) !== SortMode.MANUAL) return;
-
+	async handleDrop(target: TreeItem | undefined, dataTransfer: vscode.DataTransfer, token: vscode.CancellationToken): Promise<void> {
 		const transferItem = dataTransfer.get('application/vnd.code.tree.tabGroupsView');
 		if (!transferItem) return;
 
-		const fileList = (await transferItem.asString()).split(',');
+		const fileList: string[] = JSON.parse(await transferItem.asString());
 
+		// Find the target group and file
+		let targetGroup: TabGroup | undefined;
+		let targetIndex = -1;
+
+		if (target && target.contextValue === 'file') {
+			targetGroup = this.groups.find(g => g.files.includes(target.resourceUri?.fsPath || ''));
+			targetIndex = targetGroup?.files.indexOf(target.resourceUri?.fsPath || '') ?? -1;
+		} else if (target && target.contextValue === 'group') {
+			targetGroup = this.groups.find(g => g.label === target.label);
+			targetIndex = targetGroup?.files.length ?? -1;
+		}
+
+		// Only allow manual sorting
+		const sortMode = targetGroup?.sortMode ?? this.getSortMode();
+		if (sortMode !== SortMode.MANUAL) return;
+
+		if (!targetGroup) return;
+
+		// Remove files from all groups first
 		for (const file of fileList) {
-			// Remove from all groups first
 			for (const group of this.groups) {
 				const idx = group.files.indexOf(file);
 				if (idx !== -1) group.files.splice(idx, 1);
 			}
-			// Then add to target group
-			if (!targetGroup.files.includes(file)) {
-				targetGroup.files.push(file);
-			}
+		}
+
+		// Insert files at the target index
+		if (targetIndex === -1) {
+			targetGroup.files.push(...fileList);
+		} else {
+			targetGroup.files.splice(targetIndex, 0, ...fileList);
 		}
 
 		saveGroups(this.context, this.groups);
 		this.refresh();
-		vscode.window.showInformationMessage(`Moved file(s) to group "${targetGroup.label}"`);
 	}
 }
 
