@@ -45,6 +45,18 @@
           "command": "tabgroupview.renameGroup",
           "when": "view == tabGroupsView && viewItem == group",
           "group": "inline"
+        },
+        {
+          "command": "tabgroupview.switchGroupSortMode",
+          "when": "view == tabGroupsView && viewItem == group",
+          "group": "inline"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "tabgroupview.switchSortMode",
+          "when": "view == tabGroupsView",
+          "group": "navigation"
         }
       ]
     },
@@ -64,6 +76,14 @@
       {
         "command": "tabgroupview.renameGroup",
         "title": "Rename"
+      },
+      {
+        "command": "tabgroupview.switchSortMode",
+        "title": "Sort"
+      },
+      {
+        "command": "tabgroupview.switchGroupSortMode",
+        "title": "Sort (Group)"
       }
     ]
   },

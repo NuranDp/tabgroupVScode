@@ -3,9 +3,17 @@ import * as vscode from 'vscode';
 interface TabGroup {
 	label: string;
 	files: string[];
+	sortMode?: SortMode; // Per-group sorting mode
+}
+
+enum SortMode {
+	MANUAL = 'Manual',
+	NAME_ASC = 'Name Ascending',
+	NAME_DESC = 'Name Descending'
 }
 
 const TAB_GROUPS_KEY = 'tabGroups';
+const SORT_MODE_KEY = 'tabGroupSortMode';
 
 function loadGroups(context: vscode.ExtensionContext): TabGroup[] {
 	return context.globalState.get<TabGroup[]>(TAB_GROUPS_KEY) || [];
@@ -15,10 +23,19 @@ function saveGroups(context: vscode.ExtensionContext, groups: TabGroup[]) {
 	context.globalState.update(TAB_GROUPS_KEY, groups);
 }
 
+function loadSortMode(context: vscode.ExtensionContext): SortMode {
+	return (context.globalState.get<SortMode>(SORT_MODE_KEY) || SortMode.MANUAL);
+}
+
+function saveSortMode(context: vscode.ExtensionContext, mode: SortMode) {
+	context.globalState.update(SORT_MODE_KEY, mode);
+}
+
 export function activate(context: vscode.ExtensionContext) {
 	let groups: TabGroup[] = loadGroups(context);
+	let sortMode: SortMode = loadSortMode(context);
 
-	const treeDataProvider = new TabGroupTreeProvider(groups, context);
+	const treeDataProvider = new TabGroupTreeProvider(groups, context, () => sortMode);
 	vscode.window.createTreeView('tabGroupsView', {
 		treeDataProvider,
 		dragAndDropController: treeDataProvider.dragAndDropController
@@ -120,7 +137,43 @@ export function activate(context: vscode.ExtensionContext) {
 				treeDataProvider.refresh();
 				vscode.window.showInformationMessage(`Group renamed to '${newLabel}'`);
 			}
-		})
+		}),
+
+		// Switch sorting mode
+		vscode.commands.registerCommand('tabgroupview.switchSortMode', async () => {
+			const options = [
+				{ label: 'Manual (draggable)', mode: SortMode.MANUAL },
+				{ label: 'Name Ascending (A-Z)', mode: SortMode.NAME_ASC },
+				{ label: 'Name Descending (Z-A)', mode: SortMode.NAME_DESC }
+			];
+			const picked = await vscode.window.showQuickPick(options, {
+				placeHolder: 'Select sorting mode for files in groups'
+			});
+			if (!picked) return;
+			sortMode = picked.mode;
+			saveSortMode(context, sortMode);
+			treeDataProvider.refresh();
+		}),
+
+		// Switch sorting mode for a group
+		vscode.commands.registerCommand('tabgroupview.switchGroupSortMode', async (item: TreeItem) => {
+			if (item.contextValue !== 'group') return;
+			const group = groups.find(g => g.label === item.label);
+			if (!group) return;
+
+			const options = [
+				{ label: 'Manual (draggable)', mode: SortMode.MANUAL },
+				{ label: 'Name Ascending (A-Z)', mode: SortMode.NAME_ASC },
+				{ label: 'Name Descending (Z-A)', mode: SortMode.NAME_DESC }
+			];
+			const picked = await vscode.window.showQuickPick(options, {
+				placeHolder: `Select sorting mode for group "${group.label}"`
+			});
+			if (!picked) return;
+			group.sortMode = picked.mode;
+			saveGroups(context, groups);
+			treeDataProvider.refresh();
+		}),
 	);
 }
 
@@ -130,8 +183,12 @@ class TabGroupTreeProvider implements vscode.TreeDataProvider<TreeItem> {
 
 	public readonly dragAndDropController: vscode.TreeDragAndDropController<TreeItem>;
 
-	constructor(private groups: TabGroup[], private context: vscode.ExtensionContext) {
-		this.dragAndDropController = new TabGroupDragAndDropController(groups, context, this.refresh.bind(this));
+	constructor(
+		private groups: TabGroup[],
+		private context: vscode.ExtensionContext,
+		private getSortMode: () => SortMode // Keep for compatibility, but not used for files now
+	) {
+		this.dragAndDropController = new TabGroupDragAndDropController(groups, context, this.refresh.bind(this), this.getSortMode);
 	}
 	getTreeItem(element: TreeItem): vscode.TreeItem {
 		return element;
@@ -144,15 +201,31 @@ class TabGroupTreeProvider implements vscode.TreeDataProvider<TreeItem> {
 				group => new TreeItem(group.label, vscode.TreeItemCollapsibleState.Collapsed, 'group')
 			));
 		} else if (element.contextValue === 'group') {
-			// Find group by label
 			const group = this.groups.find(g => g.label === element.label);
 			if (!group) return Promise.resolve([]);
 
-			// Map to TreeItems
-			const fileItems = group.files.map(filePath => {
+			let files = [...group.files];
+			const sortMode = group.sortMode ?? SortMode.MANUAL;
+
+			if (sortMode === SortMode.NAME_ASC) {
+				files.sort((a, b) => {
+					const aName = vscode.workspace.asRelativePath(a, false).split(/[\\/]/).pop() || a;
+					const bName = vscode.workspace.asRelativePath(b, false).split(/[\\/]/).pop() || b;
+					return aName.localeCompare(bName);
+				});
+			} else if (sortMode === SortMode.NAME_DESC) {
+				files.sort((a, b) => {
+					const aName = vscode.workspace.asRelativePath(a, false).split(/[\\/]/).pop() || a;
+					const bName = vscode.workspace.asRelativePath(b, false).split(/[\\/]/).pop() || b;
+					return bName.localeCompare(aName);
+				});
+			}
+			// Manual: keep order as in group.files
+
+			const fileItems = files.map(filePath => {
 				const fileName = vscode.workspace.asRelativePath(filePath, false).split(/[\\/]/).pop() || filePath;
 				const item = new TreeItem(fileName, vscode.TreeItemCollapsibleState.None, 'file');
-				item.resourceUri = vscode.Uri.file(filePath); // preserves VSCode icons
+				item.resourceUri = vscode.Uri.file(filePath);
 				item.command = {
 					command: 'vscode.open',
 					title: 'Open File',
@@ -163,14 +236,10 @@ class TabGroupTreeProvider implements vscode.TreeDataProvider<TreeItem> {
 				return item;
 			});
 
-			// Sort alphabetically by label
-			fileItems.sort((a, b) => a.label.localeCompare(b.label));
-
 			return Promise.resolve(fileItems);
 		}
 		return Promise.resolve([]);
 	}
-
 
 	refresh(): void {
 		this._onDidChangeTreeData.fire(undefined);
@@ -181,23 +250,35 @@ class TabGroupDragAndDropController implements vscode.TreeDragAndDropController<
 	public readonly dragMimeTypes = ['application/vnd.code.tree.tabGroupsView'];
 	public readonly dropMimeTypes = ['application/vnd.code.tree.tabGroupsView'];
 
-	constructor(private groups: TabGroup[], private context: vscode.ExtensionContext, private refresh: () => void) { }
+	constructor(
+		private groups: TabGroup[],
+		private context: vscode.ExtensionContext,
+		private refresh: () => void,
+		private getSortMode: () => SortMode // Keep for compatibility
+	) { }
 
 	handleDrag(source: TreeItem[], dataTransfer: vscode.DataTransfer): void | Thenable<void> {
+		// Only allow drag if all selected files are from groups with MANUAL sortMode
+		const allManual = source.every(s => {
+			if (s.contextValue !== 'file') return false;
+			const parentGroup = this.groups.find(g => g.files.includes(s.resourceUri?.fsPath || ''));
+			return parentGroup?.sortMode !== undefined ? parentGroup.sortMode === SortMode.MANUAL : true;
+		});
+		if (!allManual) return;
 		const files = source.filter(s => s.contextValue === 'file').map(s => s.label);
 		dataTransfer.set('application/vnd.code.tree.tabGroupsView', new vscode.DataTransferItem(files.join(',')));
 	}
 
 	async handleDrop(target: TreeItem | undefined, dataTransfer: vscode.DataTransfer): Promise<void> {
+		if (!target || target.contextValue !== 'group') return;
+
+		const targetGroup = this.groups.find(g => g.label === target.label);
+		if (!targetGroup || (targetGroup.sortMode ?? SortMode.MANUAL) !== SortMode.MANUAL) return;
+
 		const transferItem = dataTransfer.get('application/vnd.code.tree.tabGroupsView');
 		if (!transferItem) return;
 
 		const fileList = (await transferItem.asString()).split(',');
-
-		if (!target || target.contextValue !== 'group') return;
-
-		const targetGroup = this.groups.find(g => g.label === target.label);
-		if (!targetGroup) return;
 
 		for (const file of fileList) {
 			// Remove from all groups first
@@ -216,7 +297,6 @@ class TabGroupDragAndDropController implements vscode.TreeDragAndDropController<
 		vscode.window.showInformationMessage(`Moved file(s) to group "${targetGroup.label}"`);
 	}
 }
-
 
 class TreeItem extends vscode.TreeItem {
 	constructor(
