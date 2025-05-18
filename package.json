@@ -38,17 +38,17 @@
         },
         {
           "command": "tabgroupview.deleteGroup",
-          "when": "view == tabGroupsView && viewItem == group",
+          "when": "view == tabGroupsView && (viewItem == group || viewItem == groupPinned)",
           "group": "inline"
         },
         {
           "command": "tabgroupview.renameGroup",
-          "when": "view == tabGroupsView && viewItem == group",
+          "when": "view == tabGroupsView && (viewItem == group || viewItem == groupPinned)",
           "group": "inline"
         },
         {
           "command": "tabgroupview.switchGroupSortMode",
-          "when": "view == tabGroupsView && viewItem == group",
+          "when": "view == tabGroupsView && (viewItem == group || viewItem == groupPinned)",
           "group": "inline"
         },
         {

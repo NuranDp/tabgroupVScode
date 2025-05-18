@@ -96,7 +96,7 @@ export function activate(context: vscode.ExtensionContext) {
 
 		// Delete group
 		vscode.commands.registerCommand('tabgroupview.deleteGroup', async (item: TreeItem) => {
-			if (item.contextValue !== 'group') return;
+			if (item.contextValue !== 'group' && item.contextValue !== 'groupPinned') return;
 
 			const confirm = await vscode.window.showWarningMessage(
 				`Delete group "${item.label}"?`,
@@ -116,7 +116,7 @@ export function activate(context: vscode.ExtensionContext) {
 
 		// Rename group
 		vscode.commands.registerCommand('tabgroupview.renameGroup', async (item: TreeItem) => {
-			if (item.contextValue !== 'group') return;
+			if (item.contextValue !== 'group' && item.contextValue !== 'groupPinned') return;
 
 			const oldLabel = item.label;
 			const newLabel = await vscode.window.showInputBox({
@@ -158,7 +158,7 @@ export function activate(context: vscode.ExtensionContext) {
 
 		// Switch sorting mode for a group
 		vscode.commands.registerCommand('tabgroupview.switchGroupSortMode', async (item: TreeItem) => {
-			if (item.contextValue !== 'group') return;
+			if (item.contextValue !== 'group' && item.contextValue !== 'groupPinned') return;
 			const group = groups.find(g => g.label === item.label);
 			if (!group) return;
 
