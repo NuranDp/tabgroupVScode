@@ -38,13 +38,11 @@
         },
         {
           "command": "tabgroupview.deleteGroup",
-          "when": "view == tabGroupsView && (viewItem == group || viewItem == groupPinned)",
-          "group": "inline"
+          "when": "view == tabGroupsView && (viewItem == group || viewItem == groupPinned)"
         },
         {
           "command": "tabgroupview.renameGroup",
-          "when": "view == tabGroupsView && (viewItem == group || viewItem == groupPinned)",
-          "group": "inline"
+          "when": "view == tabGroupsView && (viewItem == group || viewItem == groupPinned)"
         },
         {
           "command": "tabgroupview.switchGroupSortMode",
