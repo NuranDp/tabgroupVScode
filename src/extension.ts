@@ -17,19 +17,19 @@ const TAB_GROUPS_KEY = 'tabGroups';
 const SORT_MODE_KEY = 'tabGroupSortMode';
 
 function loadGroups(context: vscode.ExtensionContext): TabGroup[] {
-	return context.globalState.get<TabGroup[]>(TAB_GROUPS_KEY) || [];
+	return context.workspaceState.get<TabGroup[]>(TAB_GROUPS_KEY) || [];
 }
 
 function saveGroups(context: vscode.ExtensionContext, groups: TabGroup[]) {
-	context.globalState.update(TAB_GROUPS_KEY, groups);
+	context.workspaceState.update(TAB_GROUPS_KEY, groups);
 }
 
 function loadSortMode(context: vscode.ExtensionContext): SortMode {
-	return (context.globalState.get<SortMode>(SORT_MODE_KEY) || SortMode.MANUAL);
+	return (context.workspaceState.get<SortMode>(SORT_MODE_KEY) || SortMode.MANUAL);
 }
 
 function saveSortMode(context: vscode.ExtensionContext, mode: SortMode) {
-	context.globalState.update(SORT_MODE_KEY, mode);
+	context.workspaceState.update(SORT_MODE_KEY, mode);
 }
 
 let treeView: vscode.TreeView<TreeItem> | undefined;
