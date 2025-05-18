@@ -64,6 +64,11 @@
           "command": "tabgroupview.switchSortMode",
           "when": "view == tabGroupsView",
           "group": "navigation"
+        },
+        {
+          "command": "tabgroupview.expandAll",
+          "when": "view == tabGroupsView",
+          "group": "navigation"
         }
       ]
     },
@@ -92,6 +97,11 @@
         "command": "tabgroupview.switchSortMode",
         "title": "Sort",
         "icon": "$(sort-precedence)"
+      },
+      {
+        "command": "tabgroupview.expandAll",
+        "title": "Expand All",
+        "icon": "$(chevron-down)"
       },
       {
         "command": "tabgroupview.switchGroupSortMode",

@@ -32,14 +32,25 @@ function saveSortMode(context: vscode.ExtensionContext, mode: SortMode) {
 	context.globalState.update(SORT_MODE_KEY, mode);
 }
 
+let treeView: vscode.TreeView<TreeItem> | undefined;
+let treeDataProvider: TabGroupTreeProvider | undefined;
+let expandedGroups = new Set<string>();
+
 export function activate(context: vscode.ExtensionContext) {
 	let groups: TabGroup[] = loadGroups(context);
 	let sortMode: SortMode = loadSortMode(context);
 
-	const treeDataProvider = new TabGroupTreeProvider(groups, context, () => sortMode);
-	vscode.window.createTreeView('tabGroupsView', {
+	treeDataProvider = new TabGroupTreeProvider(groups, context, () => sortMode);
+	treeView = vscode.window.createTreeView('tabGroupsView', {
 		treeDataProvider,
 		dragAndDropController: treeDataProvider.dragAndDropController
+	});
+
+	treeView.onDidExpandElement(e => {
+		if (e.element.id) expandedGroups.add(e.element.id);
+	});
+	treeView.onDidCollapseElement(e => {
+		if (e.element.id) expandedGroups.delete(e.element.id);
 	});
 
 	context.subscriptions.push(
@@ -70,7 +81,7 @@ export function activate(context: vscode.ExtensionContext) {
 				targetGroup.files.push(filePath);
 				saveGroups(context, groups);
 				vscode.window.showInformationMessage(`Added to group: ${targetGroup.label}`);
-				treeDataProvider.refresh();
+				treeDataProvider?.refresh();
 			}
 		}),
 
@@ -87,7 +98,7 @@ export function activate(context: vscode.ExtensionContext) {
 					group.files.splice(idx, 1);
 					saveGroups(context, groups);
 					vscode.window.showInformationMessage(`Removed from group: ${group.label}`);
-					treeDataProvider.refresh();
+					treeDataProvider?.refresh();
 					break;
 				}
 
@@ -109,7 +120,7 @@ export function activate(context: vscode.ExtensionContext) {
 					groups.splice(idx, 1);
 					saveGroups(context, groups);
 					vscode.window.showInformationMessage(`Deleted group: ${item.label}`);
-					treeDataProvider.refresh();
+					treeDataProvider?.refresh();
 				}
 			}
 		}),
@@ -135,7 +146,7 @@ export function activate(context: vscode.ExtensionContext) {
 			if (group) {
 				group.label = newLabel;
 				saveGroups(context, groups);
-				treeDataProvider.refresh();
+				treeDataProvider?.refresh();
 				vscode.window.showInformationMessage(`Group renamed to '${newLabel}'`);
 			}
 		}),
@@ -153,7 +164,7 @@ export function activate(context: vscode.ExtensionContext) {
 			if (!picked) return;
 			sortMode = picked.mode;
 			saveSortMode(context, sortMode);
-			treeDataProvider.refresh();
+			treeDataProvider?.refresh();
 		}),
 
 		// Switch sorting mode for a group
@@ -174,7 +185,7 @@ export function activate(context: vscode.ExtensionContext) {
 			if (!picked) return;
 			group.sortMode = picked.mode;
 			saveGroups(context, groups);
-			treeDataProvider.refresh();
+			treeDataProvider?.refresh();
 		}),
 
 		vscode.commands.registerCommand('tabgroupview.pinGroup', async (item: TreeItem) => {
@@ -183,7 +194,7 @@ export function activate(context: vscode.ExtensionContext) {
 			if (!group) return;
 			group.pinned = true;
 			saveGroups(context, groups);
-			treeDataProvider.refresh();
+			treeDataProvider?.refresh();
 		}),
 
 		vscode.commands.registerCommand('tabgroupview.unpinGroup', async (item: TreeItem) => {
@@ -192,8 +203,18 @@ export function activate(context: vscode.ExtensionContext) {
 			if (!group) return;
 			group.pinned = false;
 			saveGroups(context, groups);
-			treeDataProvider.refresh();
+			treeDataProvider?.refresh();
 		}),
+
+		vscode.commands.registerCommand('tabgroupview.expandAll', async () => {
+			if (!treeView || !treeDataProvider) return;
+			const roots = await treeDataProvider.getChildren(undefined);
+			if (roots && roots.length) {
+				for (const group of roots) {
+					await treeView.reveal(group, { expand: true, focus: false, select: false });
+				}
+			}
+		})
 	);
 }
 
@@ -292,6 +313,26 @@ class TabGroupTreeProvider implements vscode.TreeDataProvider<TreeItem> {
 			return Promise.resolve(fileItems);
 		}
 		return Promise.resolve([]);
+	}
+
+	getParent(element: TreeItem): TreeItem | undefined {
+		// All groups are root, so they have no parent
+		// Files' parent is the group
+		if (element.contextValue === 'file') {
+			// Find the group this file belongs to
+			for (const group of this.groups) {
+				if (group.files.includes(element.resourceUri?.fsPath || '')) {
+					return new TreeItem(
+						group.label,
+						vscode.TreeItemCollapsibleState.Collapsed,
+						group.pinned ? 'groupPinned' : 'group',
+						`group:${group.label}`
+					);
+				}
+			}
+		}
+		// Root groups have no parent
+		return undefined;
 	}
 
 	refresh(): void {
