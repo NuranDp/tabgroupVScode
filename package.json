@@ -76,7 +76,7 @@
       {
         "command": "tabgroupview.removeFromGroup",
         "title": "Remove",
-        "icon": "$(trash)"
+        "icon": "$(remove)"
       },
       {
         "command": "tabgroupview.deleteGroup",
