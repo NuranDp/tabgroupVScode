@@ -1,8 +1,13 @@
 {
   "name": "tabgroupview",
-  "displayName": "TabGroupView",
-  "description": "",
+  "displayName": "Tab Groups",
+  "description": "Organize and manage your editor tabs in groups for better productivity.",
   "version": "0.0.1",
+  "icon": "images/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/NuranDp/tabgroupVScode"
+  },
   "engines": {
     "vscode": "^1.100.0"
   },
