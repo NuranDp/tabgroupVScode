@@ -62,6 +62,11 @@
           "command": "tabgroupview.unpinGroup",
           "when": "view == tabGroupsView && viewItem == groupPinned",
           "group": "inline"
+        },
+        {
+          "command": "tabgroupview.addToGroup",
+          "when": "view == vscode-solution-explorer",
+          "group": "navigation"
         }
       ],
       "view/title": [
@@ -80,7 +85,7 @@
     "commands": [
       {
         "command": "tabgroupview.addToGroup",
-        "title": "Add to Group",
+        "title": "Add to Tab Group",
         "icon": "$(add)"
       },
       {
@@ -122,6 +127,18 @@
         "command": "tabgroupview.unpinGroup",
         "title": "Unpin Group",
         "icon": "$(pinned)"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "tabgroupview.addToGroup",
+        "key": "ctrl+alt+g",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "tabgroupview.addToGroup",
+        "key": "ctrl+alt+g",
+        "when": "explorerViewletVisible && filesExplorerFocus"
       }
     ]
   },

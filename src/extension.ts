@@ -56,7 +56,17 @@ export function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(
 
 		// Add to group
-		vscode.commands.registerCommand('tabgroupview.addToGroup', async (uri: vscode.Uri) => {
+		vscode.commands.registerCommand('tabgroupview.addToGroup', async (uri?: vscode.Uri) => {
+			if (!uri) {
+				const activeEditor = vscode.window.activeTextEditor;
+				if (activeEditor) {
+					uri = activeEditor.document.uri;
+				}
+			}
+			if (!uri) {
+				vscode.window.showWarningMessage('No file selected to add to a tab group.');
+				return;
+			}
 			const filePath = uri.fsPath;
 			const groupNames = groups.map(g => g.label);
 			const selected = await vscode.window.showQuickPick(
