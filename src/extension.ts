@@ -55,8 +55,10 @@ export function activate(context: vscode.ExtensionContext) {
 
 	context.subscriptions.push(
 
-		// Add to group
+		// Add to group (works from tab context menu or active editor)
 		vscode.commands.registerCommand('tabgroupview.addToGroup', async (uri?: vscode.Uri) => {
+			// If invoked from tab context menu, VS Code passes the file URI.
+			// If invoked from command palette or keybinding, use the active editor's URI.
 			if (!uri) {
 				const activeEditor = vscode.window.activeTextEditor;
 				if (activeEditor) {

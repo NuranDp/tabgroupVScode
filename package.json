@@ -80,6 +80,12 @@
           "when": "view == tabGroupsView",
           "group": "navigation"
         }
+      ],
+      "editor/title/context": [
+        {
+          "command": "tabgroupview.addToGroup",
+          "group": "navigation"
+        }
       ]
     },
     "commands": [
