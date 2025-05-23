@@ -328,10 +328,23 @@ export function activate(context: vscode.ExtensionContext) {
 					...g,
 					files: g.files.map(f => vscode.Uri.file(workspaceFolder ? require('path').join(workspaceFolder, f) : f).fsPath)
 				}));
-				groups = resolvedGroups;
+				// Merge imported groups with existing groups (by group name)
+				const existingGroups = loadGroups(context);
+				const mergedGroups: TabGroup[] = [...existingGroups];
+				for (const importedGroup of resolvedGroups) {
+					const idx = mergedGroups.findIndex(g => g.label === importedGroup.label);
+					if (idx !== -1) {
+						// Merge files, avoid duplicates
+						const fileSet = new Set([...mergedGroups[idx].files, ...importedGroup.files]);
+						mergedGroups[idx].files = Array.from(fileSet);
+					} else {
+						mergedGroups.push(importedGroup);
+					}
+				}
+				groups = mergedGroups;
 				saveGroups(context, groups);
 				treeDataProvider?.updateGroups(groups);
-				vscode.window.showInformationMessage('Tab groups imported successfully.');
+				vscode.window.showInformationMessage('Tab groups imported and merged successfully.');
 			} catch (e) {
 				vscode.window.showErrorMessage('Failed to import tab groups: ' + (e instanceof Error ? e.message : e));
 			}
