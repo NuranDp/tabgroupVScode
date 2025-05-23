@@ -292,10 +292,15 @@ export function activate(context: vscode.ExtensionContext) {
 			}
 		}),
 
-		// Export tab groups to a JSON file
+		// Export tab groups to a JSON file (use relative paths)
 		vscode.commands.registerCommand('tabgroupview.exportGroups', async () => {
 			const groups: TabGroup[] = loadGroups(context);
-			const json = JSON.stringify(groups, null, 2);
+			const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
+			const exportGroups = groups.map(g => ({
+				...g,
+				files: g.files.map(f => vscode.workspace.asRelativePath(f, false))
+			}));
+			const json = JSON.stringify(exportGroups, null, 2);
 			const uri = await vscode.window.showSaveDialog({
 				saveLabel: 'Export Tab Groups',
 				filters: { 'JSON': ['json'] },
@@ -306,7 +311,7 @@ export function activate(context: vscode.ExtensionContext) {
 			vscode.window.showInformationMessage('Tab groups exported successfully.');
 		}),
 
-		// Import tab groups from a JSON file
+		// Import tab groups from a JSON file (resolve relative paths)
 		vscode.commands.registerCommand('tabgroupview.importGroups', async () => {
 			const uri = await vscode.window.showOpenDialog({
 				canSelectMany: false,
@@ -318,7 +323,12 @@ export function activate(context: vscode.ExtensionContext) {
 			try {
 				const groupsFromFile: TabGroup[] = JSON.parse(Buffer.from(data).toString('utf8'));
 				if (!Array.isArray(groupsFromFile)) throw new Error('Invalid format');
-				groups = groupsFromFile;
+				const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
+				const resolvedGroups = groupsFromFile.map(g => ({
+					...g,
+					files: g.files.map(f => vscode.Uri.file(workspaceFolder ? require('path').join(workspaceFolder, f) : f).fsPath)
+				}));
+				groups = resolvedGroups;
 				saveGroups(context, groups);
 				treeDataProvider?.updateGroups(groups);
 				vscode.window.showInformationMessage('Tab groups imported successfully.');
