@@ -35,6 +35,8 @@ function saveSortMode(context: vscode.ExtensionContext, mode: SortMode) {
 let treeView: vscode.TreeView<TreeItem> | undefined;
 let treeDataProvider: TabGroupTreeProvider | undefined;
 let expandedGroups = new Set<string>();
+let searchTerm: string | undefined = undefined;
+let isSearchActive: boolean = false;
 
 export function activate(context: vscode.ExtensionContext) {
 	let groups: TabGroup[] = loadGroups(context);
@@ -272,6 +274,21 @@ export function activate(context: vscode.ExtensionContext) {
 			saveGroups(context, groups);
 			treeDataProvider?.refresh();
 			vscode.window.showInformationMessage(`Created group: ${groupName}`);
+		}),
+
+		// Search files in all groups
+		vscode.commands.registerCommand('tabgroupview.searchGroups', async () => {
+			const input = await vscode.window.showInputBox({
+				prompt: 'Search files in all tab groups (leave empty to clear search)',
+				value: searchTerm || ''
+			});
+			searchTerm = input || undefined;
+			isSearchActive = !!searchTerm && searchTerm.trim() !== '';
+			treeDataProvider?.refresh();
+			// Update the view title to indicate search is active
+			if (treeView) {
+				treeView.title = isSearchActive ? 'Tab Groups (Search Active)' : 'Tab Groups';
+			}
 		})
 	);
 }
@@ -332,6 +349,14 @@ class TabGroupTreeProvider implements vscode.TreeDataProvider<TreeItem> {
 			if (!group) return Promise.resolve([]);
 
 			let files = [...group.files];
+			// Filter files by search term if set
+			if (searchTerm && searchTerm.trim() !== '') {
+				const term = searchTerm.toLowerCase();
+				files = files.filter(f =>
+					vscode.workspace.asRelativePath(f, false).toLowerCase().includes(term)
+				);
+			}
+
 			const sortMode = group.sortMode ?? this.getSortMode();
 
 			if (sortMode === SortMode.NAME_ASC) {

@@ -84,6 +84,11 @@
           "command": "tabgroupview.createGroup",
           "when": "view == tabGroupsView",
           "group": "navigation"
+        },
+        {
+          "command": "tabgroupview.searchGroups",
+          "when": "view == tabGroupsView",
+          "group": "navigation"
         }
       ],
       "editor/title/context": [
@@ -143,6 +148,11 @@
         "command": "tabgroupview.createGroup",
         "title": "Create New Tab Group",
         "icon": "$(add)"
+      },
+      {
+        "command": "tabgroupview.searchGroups",
+        "title": "Search Tab Groups",
+        "icon": "$(search)"
       }
     ],
     "keybindings": [
