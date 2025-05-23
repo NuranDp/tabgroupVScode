@@ -334,9 +334,12 @@ export function activate(context: vscode.ExtensionContext) {
 				for (const importedGroup of resolvedGroups) {
 					const idx = mergedGroups.findIndex(g => g.label === importedGroup.label);
 					if (idx !== -1) {
-						// Merge files, avoid duplicates
-						const fileSet = new Set([...mergedGroups[idx].files, ...importedGroup.files]);
-						mergedGroups[idx].files = Array.from(fileSet);
+						 // Add only new files to the existing group
+						for (const file of importedGroup.files) {
+							if (!mergedGroups[idx].files.includes(file)) {
+								mergedGroups[idx].files.push(file);
+							}
+						}
 					} else {
 						mergedGroups.push(importedGroup);
 					}
