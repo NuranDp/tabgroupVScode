@@ -334,16 +334,27 @@ export function activate(context: vscode.ExtensionContext) {
 				for (const importedGroup of resolvedGroups) {
 					const idx = mergedGroups.findIndex(g => g.label === importedGroup.label);
 					if (idx !== -1) {
-						 // Add only new files to the existing group
+						// Maintain order: append only new files, preserving import order
 						for (const file of importedGroup.files) {
 							if (!mergedGroups[idx].files.includes(file)) {
 								mergedGroups[idx].files.push(file);
 							}
 						}
 					} else {
+						// Insert new group at the same position as in the import, after all previous imported groups
 						mergedGroups.push(importedGroup);
 					}
 				}
+				// Reorder mergedGroups to match import order for imported groups, keep existing groups in their original order otherwise
+				const importLabels = resolvedGroups.map(g => g.label);
+				mergedGroups.sort((a, b) => {
+					const aIdx = importLabels.indexOf(a.label);
+					const bIdx = importLabels.indexOf(b.label);
+					if (aIdx === -1 && bIdx === -1) return 0; // both are old
+					if (aIdx === -1) return 1; // a is old, b is imported
+					if (bIdx === -1) return -1; // b is old, a is imported
+					return aIdx - bIdx; // both imported, preserve import order
+				});
 				groups = mergedGroups;
 				saveGroups(context, groups);
 				treeDataProvider?.updateGroups(groups);
