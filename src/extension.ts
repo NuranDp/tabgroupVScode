@@ -226,6 +226,20 @@ export function activate(context: vscode.ExtensionContext) {
 					await treeView.reveal(group, { expand: true, focus: false, select: false });
 				}
 			}
+		}),
+
+		// Create new empty group
+		vscode.commands.registerCommand('tabgroupview.createGroup', async () => {
+			const groupName = await vscode.window.showInputBox({ prompt: 'Enter new group name' });
+			if (!groupName) return;
+			if (groups.some(g => g.label === groupName)) {
+				vscode.window.showWarningMessage('A group with this name already exists.');
+				return;
+			}
+			groups.push({ label: groupName, files: [] });
+			saveGroups(context, groups);
+			treeDataProvider?.refresh();
+			vscode.window.showInformationMessage(`Created group: ${groupName}`);
 		})
 	);
 }

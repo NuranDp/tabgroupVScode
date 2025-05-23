@@ -79,6 +79,11 @@
           "command": "tabgroupview.expandAll",
           "when": "view == tabGroupsView",
           "group": "navigation"
+        },
+        {
+          "command": "tabgroupview.createGroup",
+          "when": "view == tabGroupsView",
+          "group": "navigation"
         }
       ],
       "editor/title/context": [
@@ -133,6 +138,11 @@
         "command": "tabgroupview.unpinGroup",
         "title": "Unpin Group",
         "icon": "$(pinned)"
+      },
+      {
+        "command": "tabgroupview.createGroup",
+        "title": "Create New Tab Group",
+        "icon": "$(add)"
       }
     ],
     "keybindings": [
