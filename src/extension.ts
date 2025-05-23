@@ -57,7 +57,7 @@ export function activate(context: vscode.ExtensionContext) {
 
 		// Add to group (works from tab context menu or active editor)
 		vscode.commands.registerCommand('tabgroupview.addToGroup', async (uri?: vscode.Uri) => {
-			// If invoked from tab context menu, VS Code passes the file URI.
+			// If invoked from tab context menu, VS Code passes the file/folder URI.
 			// If invoked from command palette or keybinding, use the active editor's URI.
 			if (!uri) {
 				const activeEditor = vscode.window.activeTextEditor;
@@ -66,14 +66,42 @@ export function activate(context: vscode.ExtensionContext) {
 				}
 			}
 			if (!uri) {
-				vscode.window.showWarningMessage('No file selected to add to a tab group.');
+				vscode.window.showWarningMessage('No file or folder selected to add to a tab group.');
 				return;
 			}
-			const filePath = uri.fsPath;
+
+			// Helper to recursively collect all files in a folder
+			async function getAllFilesInFolder(folderUri: vscode.Uri): Promise<string[]> {
+				let files: string[] = [];
+				const entries = await vscode.workspace.fs.readDirectory(folderUri);
+				for (const [name, type] of entries) {
+					const entryUri = vscode.Uri.joinPath(folderUri, name);
+					if (type === vscode.FileType.File) {
+						files.push(entryUri.fsPath);
+					} else if (type === vscode.FileType.Directory) {
+						const subFiles = await getAllFilesInFolder(entryUri);
+						files = files.concat(subFiles);
+					}
+				}
+				return files;
+			}
+
+			let filePaths: string[] = [];
+			const stat = await vscode.workspace.fs.stat(uri);
+			if (stat.type === vscode.FileType.Directory) {
+				filePaths = await getAllFilesInFolder(uri);
+				if (filePaths.length === 0) {
+					vscode.window.showWarningMessage('No files found in the selected folder.');
+					return;
+				}
+			} else {
+				filePaths = [uri.fsPath];
+			}
+
 			const groupNames = groups.map(g => g.label);
 			const selected = await vscode.window.showQuickPick(
 				[...groupNames, '$(plus) Create new group'],
-				{ placeHolder: 'Select a tab group to add this file' }
+				{ placeHolder: 'Select a tab group to add these files' }
 			);
 
 			if (!selected) return;
@@ -89,12 +117,16 @@ export function activate(context: vscode.ExtensionContext) {
 				targetGroup = groups.find(g => g.label === selected)!;
 			}
 
-			if (!targetGroup.files.includes(filePath)) {
-				targetGroup.files.push(filePath);
-				saveGroups(context, groups);
-				vscode.window.showInformationMessage(`Added to group: ${targetGroup.label}`);
-				treeDataProvider?.refresh();
+			let addedCount = 0;
+			for (const filePath of filePaths) {
+				if (!targetGroup.files.includes(filePath)) {
+					targetGroup.files.push(filePath);
+					addedCount++;
+				}
 			}
+			saveGroups(context, groups);
+			treeDataProvider?.refresh();
+			vscode.window.showInformationMessage(`Added ${addedCount} file(s) to group: ${targetGroup.label}`);
 		}),
 
 		// Remove file from group
