@@ -165,6 +165,7 @@ export function activate(context: vscode.ExtensionContext) {
 				if (idx !== -1) {
 					groups.splice(idx, 1);
 					saveGroups(context, groups);
+					treeDataProvider?.updateGroups(groups);
 					vscode.window.showInformationMessage(`Deleted group: ${item.label}`);
 					treeDataProvider?.refresh();
 				}
@@ -288,6 +289,41 @@ export function activate(context: vscode.ExtensionContext) {
 			// Update the view title to indicate search is active
 			if (treeView) {
 				treeView.title = isSearchActive ? 'Tab Groups (Search Active)' : 'Tab Groups';
+			}
+		}),
+
+		// Export tab groups to a JSON file
+		vscode.commands.registerCommand('tabgroupview.exportGroups', async () => {
+			const groups: TabGroup[] = loadGroups(context);
+			const json = JSON.stringify(groups, null, 2);
+			const uri = await vscode.window.showSaveDialog({
+				saveLabel: 'Export Tab Groups',
+				filters: { 'JSON': ['json'] },
+				defaultUri: vscode.Uri.file('tab-groups.json')
+			});
+			if (!uri) return;
+			await vscode.workspace.fs.writeFile(uri, Buffer.from(json, 'utf8'));
+			vscode.window.showInformationMessage('Tab groups exported successfully.');
+		}),
+
+		// Import tab groups from a JSON file
+		vscode.commands.registerCommand('tabgroupview.importGroups', async () => {
+			const uri = await vscode.window.showOpenDialog({
+				canSelectMany: false,
+				filters: { 'JSON': ['json'] },
+				openLabel: 'Import Tab Groups'
+			});
+			if (!uri || !uri[0]) return;
+			const data = await vscode.workspace.fs.readFile(uri[0]);
+			try {
+				const groupsFromFile: TabGroup[] = JSON.parse(Buffer.from(data).toString('utf8'));
+				if (!Array.isArray(groupsFromFile)) throw new Error('Invalid format');
+				groups = groupsFromFile;
+				saveGroups(context, groups);
+				treeDataProvider?.updateGroups(groups);
+				vscode.window.showInformationMessage('Tab groups imported successfully.');
+			} catch (e) {
+				vscode.window.showErrorMessage('Failed to import tab groups: ' + (e instanceof Error ? e.message : e));
 			}
 		})
 	);
@@ -420,6 +456,11 @@ class TabGroupTreeProvider implements vscode.TreeDataProvider<TreeItem> {
 
 	refresh(): void {
 		this._onDidChangeTreeData.fire(undefined);
+	}
+
+	public updateGroups(newGroups: TabGroup[]) {
+		this.groups = newGroups;
+		this.refresh();
 	}
 }
 

@@ -89,6 +89,16 @@
           "command": "tabgroupview.searchGroups",
           "when": "view == tabGroupsView",
           "group": "navigation"
+        },
+        {
+          "command": "tabgroupview.exportGroups",
+          "when": "view == tabGroupsView",
+          "group": "navigation"
+        },
+        {
+          "command": "tabgroupview.importGroups",
+          "when": "view == tabGroupsView",
+          "group": "navigation"
         }
       ],
       "editor/title/context": [
@@ -153,6 +163,16 @@
         "command": "tabgroupview.searchGroups",
         "title": "Search Tab Groups",
         "icon": "$(search)"
+      },
+      {
+        "command": "tabgroupview.exportGroups",
+        "title": "Export Tab Groups",
+        "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "tabgroupview.importGroups",
+        "title": "Import Tab Groups",
+        "icon": "$(cloud-download)"
       }
     ],
     "keybindings": [
