@@ -462,7 +462,8 @@ class TabGroupTreeProvider implements vscode.TreeDataProvider<TreeItem> {
 					arguments: [vscode.Uri.file(filePath)]
 				};
 				item.tooltip = filePath;
-				item.description = vscode.workspace.asRelativePath(filePath, false);
+				// Remove description so only the file name is shown
+				// item.description = vscode.workspace.asRelativePath(filePath, false);
 				return item;
 			});
 
