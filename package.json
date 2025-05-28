@@ -23,7 +23,8 @@
       "explorer": [
         {
           "id": "tabGroupsView",
-          "name": "Tab Groups"
+          "name": "Tab Groups",
+          "type": "webview"
         }
       ]
     },
@@ -35,48 +36,9 @@
           "group": "navigation"
         }
       ],
-      "view/item/context": [
-        {
-          "command": "tabgroupview.removeFromGroup",
-          "when": "view == tabGroupsView && viewItem == file",
-          "group": "inline"
-        },
-        {
-          "command": "tabgroupview.deleteGroup",
-          "when": "view == tabGroupsView && (viewItem == group || viewItem == groupPinned)"
-        },
-        {
-          "command": "tabgroupview.renameGroup",
-          "when": "view == tabGroupsView && (viewItem == group || viewItem == groupPinned)"
-        },
-        {
-          "command": "tabgroupview.switchGroupSortMode",
-          "when": "view == tabGroupsView && (viewItem == group || viewItem == groupPinned)"
-        },
-        {
-          "command": "tabgroupview.pinGroup",
-          "when": "view == tabGroupsView && viewItem == group",
-          "group": "inline"
-        },
-        {
-          "command": "tabgroupview.unpinGroup",
-          "when": "view == tabGroupsView && viewItem == groupPinned",
-          "group": "inline"
-        },
-        {
-          "command": "tabgroupview.addToGroup",
-          "when": "view == vscode-solution-explorer",
-          "group": "navigation"
-        }
-      ],
       "view/title": [
         {
           "command": "tabgroupview.switchSortMode",
-          "when": "view == tabGroupsView",
-          "group": "navigation"
-        },
-        {
-          "command": "tabgroupview.expandAll",
           "when": "view == tabGroupsView",
           "group": "navigation"
         },
@@ -135,11 +97,6 @@
         "icon": "$(sort-precedence)"
       },
       {
-        "command": "tabgroupview.expandAll",
-        "title": "Expand All",
-        "icon": "$(chevron-down)"
-      },
-      {
         "command": "tabgroupview.switchGroupSortMode",
         "title": "Sort (Group)",
         "icon": "$(sort-precedence)"
@@ -191,10 +148,11 @@
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./",
+    "watch": "tsc -watch -p ./ & npm run watch:webview",
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src",
-    "test": "vscode-test"
+    "test": "vscode-test",
+    "build": "tsc -p ./ && npm run build:webview"
   },
   "devDependencies": {
     "@types/vscode": "^1.100.0",

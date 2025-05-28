@@ -1,0 +1,6 @@
+{
+  "scripts": {
+    "build:webview": "tsc --project tsconfig.webview.json",
+    "watch:webview": "tsc --project tsconfig.webview.json --watch"
+  }
+}

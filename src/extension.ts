@@ -32,532 +32,271 @@ function saveSortMode(context: vscode.ExtensionContext, mode: SortMode) {
 	context.workspaceState.update(SORT_MODE_KEY, mode);
 }
 
-let treeView: vscode.TreeView<TreeItem> | undefined;
-let treeDataProvider: TabGroupTreeProvider | undefined;
-let expandedGroups = new Set<string>();
-let searchTerm: string | undefined = undefined;
-let isSearchActive: boolean = false;
+// Remove TreeView and related variables, as migration to Webview is complete
+// let treeView: vscode.TreeView<TreeItem> | undefined;
+// let treeDataProvider: TabGroupTreeProvider | undefined;
+// let expandedGroups = new Set<string>();
+// let searchTerm: string | undefined = undefined;
+// let isSearchActive: boolean = false;
 
-export function activate(context: vscode.ExtensionContext) {
-	let groups: TabGroup[] = loadGroups(context);
-	let sortMode: SortMode = loadSortMode(context);
+// --- Webview View Provider for Tab Groups ---
+class TabGroupsWebviewProvider implements vscode.WebviewViewProvider {
+	public static readonly viewType = 'tabGroupsView';
+	private _view?: vscode.WebviewView;
+	private _groups: TabGroup[];
+	private _sortMode: SortMode;
+	private _searchTerm: string | undefined = undefined;
+	private _context: vscode.ExtensionContext;
 
-	treeDataProvider = new TabGroupTreeProvider(groups, context, () => sortMode);
-	treeView = vscode.window.createTreeView('tabGroupsView', {
-		treeDataProvider,
-		dragAndDropController: treeDataProvider.dragAndDropController
-	});
+	constructor(context: vscode.ExtensionContext) {
+		this._context = context;
+		this._groups = loadGroups(context);
+		this._sortMode = loadSortMode(context);
+	}
 
-	treeView.onDidExpandElement(e => {
-		if (e.element.id) expandedGroups.add(e.element.id);
-	});
-	treeView.onDidCollapseElement(e => {
-		if (e.element.id) expandedGroups.delete(e.element.id);
-	});
+	public resolveWebviewView(
+		webviewView: vscode.WebviewView,
+		context: vscode.WebviewViewResolveContext,
+		_token: vscode.CancellationToken
+	) {
+		this._view = webviewView;
+		webviewView.webview.options = {
+			enableScripts: true,
+			localResourceRoots: [
+				vscode.Uri.joinPath(this._context.extensionUri, 'media'),
+				vscode.Uri.joinPath(this._context.extensionUri, 'src')
+			]
+		};
+		this._setHtmlForWebview(webviewView.webview);
+		this._setWebviewMessageListener(webviewView.webview);
+	}
 
-	context.subscriptions.push(
+	private _setHtmlForWebview(webview: vscode.Webview) {
+        // Load HTML from external file and inject CSS/JS as webview URIs
+        const htmlPath = vscode.Uri.joinPath(this._context.extensionUri, 'src', 'tabGroupsWebview.html');
+        const cssPath = vscode.Uri.joinPath(this._context.extensionUri, 'src', 'tabGroupsWebview.css');
+        const jsPath = vscode.Uri.joinPath(this._context.extensionUri, 'src', 'tabGroupsWebview.js');
+        const html = require('fs').readFileSync(htmlPath.fsPath, 'utf8');
+        const cssUri = webview.asWebviewUri(cssPath);
+        const jsUri = webview.asWebviewUri(jsPath);
+        // Replace relative links with webview URIs
+        webview.html = html
+            .replace('./tabGroupsWebview.css', cssUri.toString())
+            .replace('./tabGroupsWebview.js', jsUri.toString());
+    }
 
-		// Add to group (works from tab context menu or active editor)
-		vscode.commands.registerCommand('tabgroupview.addToGroup', async (uri?: vscode.Uri) => {
-			// If invoked from tab context menu, VS Code passes the file/folder URI.
-			// If invoked from command palette or keybinding, use the active editor's URI.
-			if (!uri) {
-				const activeEditor = vscode.window.activeTextEditor;
-				if (activeEditor) {
-					uri = activeEditor.document.uri;
-				}
-			}
-			if (!uri) {
-				vscode.window.showWarningMessage('No file or folder selected to add to a tab group.');
-				return;
-			}
-
-			// Helper to recursively collect all files in a folder
-			async function getAllFilesInFolder(folderUri: vscode.Uri): Promise<string[]> {
-				let files: string[] = [];
-				const entries = await vscode.workspace.fs.readDirectory(folderUri);
-				for (const [name, type] of entries) {
-					const entryUri = vscode.Uri.joinPath(folderUri, name);
-					if (type === vscode.FileType.File) {
-						files.push(entryUri.fsPath);
-					} else if (type === vscode.FileType.Directory) {
-						const subFiles = await getAllFilesInFolder(entryUri);
-						files = files.concat(subFiles);
-					}
-				}
-				return files;
-			}
-
-			let filePaths: string[] = [];
-			const stat = await vscode.workspace.fs.stat(uri);
-			if (stat.type === vscode.FileType.Directory) {
-				filePaths = await getAllFilesInFolder(uri);
-				if (filePaths.length === 0) {
-					vscode.window.showWarningMessage('No files found in the selected folder.');
-					return;
-				}
-			} else {
-				filePaths = [uri.fsPath];
-			}
-
-			const groupNames = groups.map(g => g.label);
-			const selected = await vscode.window.showQuickPick(
-				[...groupNames, '$(plus) Create new group'],
-				{ placeHolder: 'Select a tab group to add these files' }
-			);
-
-			if (!selected) return;
-
-			let targetGroup: TabGroup;
-
-			if (selected === '$(plus) Create new group') {
-				const newGroup = await vscode.window.showInputBox({ prompt: 'Enter new group name' });
-				if (!newGroup) return;
-				targetGroup = { label: newGroup, files: [] };
-				groups.push(targetGroup);
-			} else {
-				targetGroup = groups.find(g => g.label === selected)!;
-			}
-
-			let addedCount = 0;
-			for (const filePath of filePaths) {
-				if (!targetGroup.files.includes(filePath)) {
-					targetGroup.files.push(filePath);
-					addedCount++;
-				}
-			}
-			saveGroups(context, groups);
-			treeDataProvider?.refresh();
-			vscode.window.showInformationMessage(`Added ${addedCount} file(s) to group: ${targetGroup.label}`);
-		}),
-
-		// Remove file from group
-		vscode.commands.registerCommand('tabgroupview.removeFromGroup', async (item: TreeItem) => {
-			if (item.contextValue !== 'file') return;
-
-			for (const group of groups) {
-				const filePath = item.resourceUri?.fsPath;
-				if (!filePath) return;
-
-				const idx = group.files.indexOf(filePath);
-				if (idx !== -1) {
-					group.files.splice(idx, 1);
-					saveGroups(context, groups);
-					vscode.window.showInformationMessage(`Removed from group: ${group.label}`);
-					treeDataProvider?.refresh();
+	private _setWebviewMessageListener(webview: vscode.Webview) {
+		webview.onDidReceiveMessage(async (msg) => {
+			switch (msg.type) {
+				case 'getState':
+					this._postState();
 					break;
-				}
-
+				case 'createGroup':
+					if (!msg.name || this._groups.some(g => g.label === msg.name)) return;
+					this._groups.push({ label: msg.name, files: [] });
+					saveGroups(this._context, this._groups);
+					this._postState();
+					break;
+				case 'renameGroup':
+					{
+						const group = this._groups.find(g => g.label === msg.oldLabel);
+						if (group && !this._groups.some(g => g.label === msg.newLabel)) {
+							group.label = msg.newLabel;
+							saveGroups(this._context, this._groups);
+							this._postState();
+						}
+					}
+					break;
+				case 'deleteGroup':
+					this._groups = this._groups.filter(g => g.label !== msg.label);
+					saveGroups(this._context, this._groups);
+					this._postState();
+					break;
+				case 'togglePinGroup':
+					{
+						const group = this._groups.find(g => g.label === msg.label);
+						if (group) {
+							group.pinned = !group.pinned;
+							saveGroups(this._context, this._groups);
+							this._postState();
+						}
+					}
+					break;
+				case 'switchSortMode':
+					{
+						const options = [SortMode.MANUAL, SortMode.NAME_ASC, SortMode.NAME_DESC];
+						const idx = options.indexOf(this._sortMode);
+						this._sortMode = options[(idx + 1) % options.length];
+						saveSortMode(this._context, this._sortMode);
+						this._postState();
+					}
+					break;
+				case 'switchGroupSortMode':
+					{
+						const group = this._groups.find(g => g.label === msg.label);
+						if (group) {
+							const options = [SortMode.MANUAL, SortMode.NAME_ASC, SortMode.NAME_DESC, undefined];
+							const idx = options.indexOf(group.sortMode);
+							group.sortMode = options[(idx + 1) % options.length];
+							saveGroups(this._context, this._groups);
+							this._postState();
+						}
+					}
+					break;
+				case 'removeFromGroup':
+					{
+						const group = this._groups.find(g => g.label === msg.group);
+						if (group) {
+							group.files = group.files.filter(f => f !== msg.file);
+							saveGroups(this._context, this._groups);
+							this._postState();
+						}
+					}
+					break;
+				case 'addToGroup':
+					{
+						// Show file/folder picker
+						const uris = await vscode.window.showOpenDialog({ canSelectFiles: true, canSelectFolders: true, canSelectMany: true });
+						if (!uris) return;
+						const group = this._groups.find(g => g.label === msg.label);
+						if (!group) return;
+						for (const uri of uris) {
+							const stat = await vscode.workspace.fs.stat(uri);
+							if (stat.type === vscode.FileType.Directory) {
+								const files = await getAllFilesInFolder(uri);
+								for (const f of files) if (!group.files.includes(f)) group.files.push(f);
+							} else {
+								if (!group.files.includes(uri.fsPath)) group.files.push(uri.fsPath);
+							}
+						}
+						saveGroups(this._context, this._groups);
+						this._postState();
+					}
+					break;
+				case 'moveFile':
+					{
+						const { fromGroup, toGroup, file, after } = msg;
+						const src = this._groups.find(g => g.label === fromGroup);
+						const dst = this._groups.find(g => g.label === toGroup);
+						if (!src || !dst) return;
+						src.files = src.files.filter(f => f !== file);
+						if (after) {
+							const idx = dst.files.indexOf(after);
+							dst.files.splice(idx + 1, 0, file);
+						} else {
+							dst.files.push(file);
+						}
+						saveGroups(this._context, this._groups);
+						this._postState();
+					}
+					break;
+				case 'openFile':
+					vscode.commands.executeCommand('vscode.open', vscode.Uri.file(msg.file));
+					break;
+				case 'exportGroups':
+					{
+						const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
+						const exportGroups = this._groups.map(g => ({
+							...g,
+							files: g.files.map(f => vscode.workspace.asRelativePath(f, false))
+						}));
+						const json = JSON.stringify(exportGroups, null, 2);
+						const uri = await vscode.window.showSaveDialog({
+							saveLabel: 'Export Tab Groups',
+							filters: { 'JSON': ['json'] },
+							defaultUri: vscode.Uri.file('tab-groups.json')
+						});
+						if (!uri) return;
+						await vscode.workspace.fs.writeFile(uri, Buffer.from(json, 'utf8'));
+						vscode.window.showInformationMessage('Tab groups exported successfully.');
+					}
+					break;
+				case 'importGroups':
+					{
+						try {
+							const groupsFromFile = JSON.parse(msg.data);
+							if (!Array.isArray(groupsFromFile)) throw new Error('Invalid format');
+							const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
+							const resolvedGroups = groupsFromFile.map(g => ({
+								...g,
+								files: g.files.map((f: string) => vscode.Uri.file(workspaceFolder ? require('path').join(workspaceFolder, f) : f).fsPath)
+							}));
+							// Merge logic as before
+							const mergedGroups = [...this._groups];
+							for (const importedGroup of resolvedGroups) {
+								const idx = mergedGroups.findIndex(g => g.label === importedGroup.label);
+								if (idx !== -1) {
+									for (const file of importedGroup.files) {
+										if (!mergedGroups[idx].files.includes(file)) {
+											mergedGroups[idx].files.push(file);
+										}
+									}
+								} else {
+									mergedGroups.push(importedGroup);
+								}
+							}
+							// Reorder mergedGroups to match import order for imported groups
+							const importLabels = resolvedGroups.map(g => g.label);
+							mergedGroups.sort((a, b) => {
+								const aIdx = importLabels.indexOf(a.label);
+								const bIdx = importLabels.indexOf(b.label);
+								if (aIdx === -1 && bIdx === -1) return 0;
+								if (aIdx === -1) return 1;
+								if (bIdx === -1) return -1;
+								return aIdx - bIdx;
+							});
+							this._groups = mergedGroups;
+							saveGroups(this._context, this._groups);
+							this._postState();
+							vscode.window.showInformationMessage('Tab groups imported and merged successfully.');
+						} catch (e) {
+							vscode.window.showErrorMessage('Failed to import tab groups: ' + (e instanceof Error ? e.message : e));
+						}
+					}
+					break;
 			}
-		}),
+		});
+	}
 
-		// Delete group
-		vscode.commands.registerCommand('tabgroupview.deleteGroup', async (item: TreeItem) => {
-			if (item.contextValue !== 'group' && item.contextValue !== 'groupPinned') return;
-
-			const confirm = await vscode.window.showWarningMessage(
-				`Delete group "${item.label}"?`,
-				{ modal: true },
-				'Delete'
-			);
-			if (confirm === 'Delete') {
-				const idx = groups.findIndex(g => g.label === item.label);
-				if (idx !== -1) {
-					groups.splice(idx, 1);
-					saveGroups(context, groups);
-					treeDataProvider?.updateGroups(groups);
-					vscode.window.showInformationMessage(`Deleted group: ${item.label}`);
-					treeDataProvider?.refresh();
-				}
-			}
-		}),
-
-		// Rename group
-		vscode.commands.registerCommand('tabgroupview.renameGroup', async (item: TreeItem) => {
-			if (item.contextValue !== 'group' && item.contextValue !== 'groupPinned') return;
-
-			const oldLabel = item.label;
-			const newLabel = await vscode.window.showInputBox({
-				prompt: 'Enter new group name',
-				value: typeof oldLabel === 'string' ? oldLabel : '',
-				validateInput: (value) => {
-					if (!value.trim()) return 'Group name cannot be empty';
-					if (groups.some(g => g.label === value && value !== oldLabel)) return 'Group name already exists';
-					return null;
-				}
-			});
-
-			if (!newLabel || newLabel === oldLabel) return;
-
-			const group = groups.find(g => g.label === oldLabel);
-			if (group) {
-				group.label = newLabel;
-				saveGroups(context, groups);
-				treeDataProvider?.refresh();
-				vscode.window.showInformationMessage(`Group renamed to '${newLabel}'`);
-			}
-		}),
-
-		// Switch sorting mode
-		vscode.commands.registerCommand('tabgroupview.switchSortMode', async () => {
-			const options = [
-				{ label: 'Manual (draggable)', mode: SortMode.MANUAL },
-				{ label: 'Name Ascending (A-Z)', mode: SortMode.NAME_ASC },
-				{ label: 'Name Descending (Z-A)', mode: SortMode.NAME_DESC }
-			];
-			const picked = await vscode.window.showQuickPick(options, {
-				placeHolder: 'Select global sorting mode for files in groups'
-			});
-			if (!picked) return;
-			sortMode = picked.mode;
-			saveSortMode(context, sortMode);
-			treeDataProvider?.refresh();
-		}),
-
-		// Switch sorting mode for a group
-		vscode.commands.registerCommand('tabgroupview.switchGroupSortMode', async (item: TreeItem) => {
-			if (item.contextValue !== 'group' && item.contextValue !== 'groupPinned') return;
-			const group = groups.find(g => g.label === item.label);
-			if (!group) return;
-
-			const options = [
-				{ label: 'Manual (draggable)', mode: SortMode.MANUAL },
-				{ label: 'Name Ascending (A-Z)', mode: SortMode.NAME_ASC },
-				{ label: 'Name Descending (Z-A)', mode: SortMode.NAME_DESC },
-				{ label: 'Use Global', mode: undefined }
-			];
-			const picked = await vscode.window.showQuickPick(options, {
-				placeHolder: `Select sorting mode for group "${group.label}"`
-			});
-			if (!picked) return;
-			group.sortMode = picked.mode;
-			saveGroups(context, groups);
-			treeDataProvider?.refresh();
-		}),
-
-		vscode.commands.registerCommand('tabgroupview.pinGroup', async (item: TreeItem) => {
-			if (item.contextValue !== 'group') return;
-			const group = groups.find(g => g.label === item.label);
-			if (!group) return;
-			group.pinned = true;
-			saveGroups(context, groups);
-			treeDataProvider?.refresh();
-		}),
-
-		vscode.commands.registerCommand('tabgroupview.unpinGroup', async (item: TreeItem) => {
-			if (item.contextValue !== 'groupPinned') return;
-			const group = groups.find(g => g.label === item.label);
-			if (!group) return;
-			group.pinned = false;
-			saveGroups(context, groups);
-			treeDataProvider?.refresh();
-		}),
-
-		vscode.commands.registerCommand('tabgroupview.expandAll', async () => {
-			if (!treeView || !treeDataProvider) return;
-			const roots = await treeDataProvider.getChildren(undefined);
-			if (roots && roots.length) {
-				for (const group of roots) {
-					await treeView.reveal(group, { expand: true, focus: false, select: false });
-				}
-			}
-		}),
-
-		// Create new empty group
-		vscode.commands.registerCommand('tabgroupview.createGroup', async () => {
-			const groupName = await vscode.window.showInputBox({ prompt: 'Enter new group name' });
-			if (!groupName) return;
-			if (groups.some(g => g.label === groupName)) {
-				vscode.window.showWarningMessage('A group with this name already exists.');
-				return;
-			}
-			groups.push({ label: groupName, files: [] });
-			saveGroups(context, groups);
-			treeDataProvider?.refresh();
-			vscode.window.showInformationMessage(`Created group: ${groupName}`);
-		}),
-
-		// Search files in all groups
-		vscode.commands.registerCommand('tabgroupview.searchGroups', async () => {
-			const input = await vscode.window.showInputBox({
-				prompt: 'Search files in all tab groups (leave empty to clear search)',
-				value: searchTerm || ''
-			});
-			searchTerm = input || undefined;
-			isSearchActive = !!searchTerm && searchTerm.trim() !== '';
-			treeDataProvider?.refresh();
-			// Update the view title to indicate search is active
-			if (treeView) {
-				treeView.title = isSearchActive ? 'Tab Groups (Search Active)' : 'Tab Groups';
-			}
-		}),
-
-		// Export tab groups to a JSON file (use relative paths)
-		vscode.commands.registerCommand('tabgroupview.exportGroups', async () => {
-			const groups: TabGroup[] = loadGroups(context);
-			const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
-			const exportGroups = groups.map(g => ({
+	private _postState() {
+		if (this._view) {
+			// Only show file names in UI, not full paths
+			const groupsForUI = this._groups.map(g => ({
 				...g,
 				files: g.files.map(f => vscode.workspace.asRelativePath(f, false))
 			}));
-			const json = JSON.stringify(exportGroups, null, 2);
-			const uri = await vscode.window.showSaveDialog({
-				saveLabel: 'Export Tab Groups',
-				filters: { 'JSON': ['json'] },
-				defaultUri: vscode.Uri.file('tab-groups.json')
+			this._view.webview.postMessage({
+				type: 'updateState',
+				groups: groupsForUI,
+				sortMode: this._sortMode
 			});
-			if (!uri) return;
-			await vscode.workspace.fs.writeFile(uri, Buffer.from(json, 'utf8'));
-			vscode.window.showInformationMessage('Tab groups exported successfully.');
-		}),
+		}
+	}
+}
 
-		// Import tab groups from a JSON file (resolve relative paths)
-		vscode.commands.registerCommand('tabgroupview.importGroups', async () => {
-			const uri = await vscode.window.showOpenDialog({
-				canSelectMany: false,
-				filters: { 'JSON': ['json'] },
-				openLabel: 'Import Tab Groups'
-			});
-			if (!uri || !uri[0]) return;
-			const data = await vscode.workspace.fs.readFile(uri[0]);
-			try {
-				const groupsFromFile: TabGroup[] = JSON.parse(Buffer.from(data).toString('utf8'));
-				if (!Array.isArray(groupsFromFile)) throw new Error('Invalid format');
-				const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
-				const resolvedGroups = groupsFromFile.map(g => ({
-					...g,
-					files: g.files.map(f => vscode.Uri.file(workspaceFolder ? require('path').join(workspaceFolder, f) : f).fsPath)
-				}));
-				// Merge imported groups with existing groups (by group name)
-				const existingGroups = loadGroups(context);
-				const mergedGroups: TabGroup[] = [...existingGroups];
-				for (const importedGroup of resolvedGroups) {
-					const idx = mergedGroups.findIndex(g => g.label === importedGroup.label);
-					if (idx !== -1) {
-						// Maintain order: append only new files, preserving import order
-						for (const file of importedGroup.files) {
-							if (!mergedGroups[idx].files.includes(file)) {
-								mergedGroups[idx].files.push(file);
-							}
-						}
-					} else {
-						// Insert new group at the same position as in the import, after all previous imported groups
-						mergedGroups.push(importedGroup);
-					}
-				}
-				// Reorder mergedGroups to match import order for imported groups, keep existing groups in their original order otherwise
-				const importLabels = resolvedGroups.map(g => g.label);
-				mergedGroups.sort((a, b) => {
-					const aIdx = importLabels.indexOf(a.label);
-					const bIdx = importLabels.indexOf(b.label);
-					if (aIdx === -1 && bIdx === -1) return 0; // both are old
-					if (aIdx === -1) return 1; // a is old, b is imported
-					if (bIdx === -1) return -1; // b is old, a is imported
-					return aIdx - bIdx; // both imported, preserve import order
-				});
-				groups = mergedGroups;
-				saveGroups(context, groups);
-				treeDataProvider?.updateGroups(groups);
-				vscode.window.showInformationMessage('Tab groups imported and merged successfully.');
-			} catch (e) {
-				vscode.window.showErrorMessage('Failed to import tab groups: ' + (e instanceof Error ? e.message : e));
-			}
-		})
+// Helper for recursive folder file collection
+async function getAllFilesInFolder(folderUri: vscode.Uri): Promise<string[]> {
+	let files: string[] = [];
+	const entries = await vscode.workspace.fs.readDirectory(folderUri);
+	for (const [name, type] of entries) {
+		const entryUri = vscode.Uri.joinPath(folderUri, name);
+		if (type === vscode.FileType.File) {
+			files.push(entryUri.fsPath);
+		} else if (type === vscode.FileType.Directory) {
+			const subFiles = await getAllFilesInFolder(entryUri);
+			files = files.concat(subFiles);
+		}
+	}
+	return files;
+}
+
+// --- Extension Activation (Webview Only) ---
+export function activate(context: vscode.ExtensionContext) {
+	// Register the webview view provider
+	context.subscriptions.push(
+		vscode.window.registerWebviewViewProvider(
+			TabGroupsWebviewProvider.viewType,
+			new TabGroupsWebviewProvider(context)
+		)
 	);
-}
-
-// Custom TreeItem class to ensure contextValue and id are set
-class TreeItem extends vscode.TreeItem {
-	constructor(
-		public readonly label: string,
-		public readonly collapsibleState: vscode.TreeItemCollapsibleState,
-		public readonly contextValue: string,
-		public readonly id?: string
-	) {
-		super(label, collapsibleState);
-		this.contextValue = contextValue;
-		if (id) this.id = id;
-	}
-}
-
-class TabGroupTreeProvider implements vscode.TreeDataProvider<TreeItem> {
-	private _onDidChangeTreeData: vscode.EventEmitter<TreeItem | undefined> = new vscode.EventEmitter<TreeItem | undefined>();
-	readonly onDidChangeTreeData: vscode.Event<TreeItem | undefined> = this._onDidChangeTreeData.event;
-
-	public readonly dragAndDropController: vscode.TreeDragAndDropController<TreeItem>;
-
-	constructor(
-		private groups: TabGroup[],
-		private context: vscode.ExtensionContext,
-		private getSortMode: () => SortMode
-	) {
-		this.dragAndDropController = new TabGroupDragAndDropController(groups, context, this.refresh.bind(this), this.getSortMode);
-	}
-	getTreeItem(element: TreeItem): vscode.TreeItem {
-		return element;
-	}
-
-	getChildren(element?: TreeItem): Thenable<TreeItem[]> {
-		if (!element) {
-			// Top level: group nodes, pinned first
-			const sortedGroups = [
-				...this.groups.filter(g => g.pinned),
-				...this.groups.filter(g => !g.pinned)
-			];
-			return Promise.resolve(sortedGroups.map(
-				group => {
-					const contextValue = group.pinned ? 'groupPinned' : 'group';
-					const item = new TreeItem(
-						group.label,
-						vscode.TreeItemCollapsibleState.Collapsed,
-						contextValue,
-						`group:${group.label}` // Stable id
-					);
-					if (group.pinned) item.description = 'Pinned';
-					return item;
-				}
-			));
-		} else if (element.contextValue === 'group' || element.contextValue === 'groupPinned') {
-			const group = this.groups.find(g => g.label === element.label);
-			if (!group) return Promise.resolve([]);
-
-			let files = [...group.files];
-			// Filter files by search term if set
-			if (searchTerm && searchTerm.trim() !== '') {
-				const term = searchTerm.toLowerCase();
-				files = files.filter(f =>
-					vscode.workspace.asRelativePath(f, false).toLowerCase().includes(term)
-				);
-			}
-
-			const sortMode = group.sortMode ?? this.getSortMode();
-
-			if (sortMode === SortMode.NAME_ASC) {
-				files.sort((a, b) => {
-					const aName = vscode.workspace.asRelativePath(a, false).split(/[\\/]/).pop() || a;
-					const bName = vscode.workspace.asRelativePath(b, false).split(/[\\/]/).pop() || b;
-					return aName.localeCompare(bName);
-				});
-			} else if (sortMode === SortMode.NAME_DESC) {
-				files.sort((a, b) => {
-					const aName = vscode.workspace.asRelativePath(a, false).split(/[\\/]/).pop() || a;
-					const bName = vscode.workspace.asRelativePath(b, false).split(/[\\/]/).pop() || b;
-					return bName.localeCompare(aName);
-				});
-			}
-			// Manual: keep order as in group.files
-
-			const fileItems = files.map(filePath => {
-				const fileName = vscode.workspace.asRelativePath(filePath, false).split(/[\\/]/).pop() || filePath;
-				const item = new TreeItem(
-					fileName,
-					vscode.TreeItemCollapsibleState.None,
-					'file',
-					`file:${group.label}:${filePath}` // Stable id for files
-				);
-				item.resourceUri = vscode.Uri.file(filePath);
-				item.command = {
-					command: 'vscode.open',
-					title: 'Open File',
-					arguments: [vscode.Uri.file(filePath)]
-				};
-				item.tooltip = filePath;
-				// Remove description so only the file name is shown
-				// item.description = vscode.workspace.asRelativePath(filePath, false);
-				return item;
-			});
-
-			return Promise.resolve(fileItems);
-		}
-		return Promise.resolve([]);
-	}
-
-	getParent(element: TreeItem): TreeItem | undefined {
-		// All groups are root, so they have no parent
-		// Files' parent is the group
-		if (element.contextValue === 'file') {
-			// Find the group this file belongs to
-			for (const group of this.groups) {
-				if (group.files.includes(element.resourceUri?.fsPath || '')) {
-					return new TreeItem(
-						group.label,
-						vscode.TreeItemCollapsibleState.Collapsed,
-						group.pinned ? 'groupPinned' : 'group',
-						`group:${group.label}`
-					);
-				}
-			}
-		}
-		// Root groups have no parent
-		return undefined;
-	}
-
-	refresh(): void {
-		this._onDidChangeTreeData.fire(undefined);
-	}
-
-	public updateGroups(newGroups: TabGroup[]) {
-		this.groups = newGroups;
-		this.refresh();
-	}
-}
-
-class TabGroupDragAndDropController implements vscode.TreeDragAndDropController<TreeItem> {
-	public readonly dragMimeTypes = ['application/vnd.code.tree.tabGroupsView'];
-	public readonly dropMimeTypes = ['application/vnd.code.tree.tabGroupsView'];
-
-	constructor(
-		private groups: TabGroup[],
-		private context: vscode.ExtensionContext,
-		private refresh: () => void,
-		private getSortMode: () => SortMode
-	) { }
-
-	handleDrag(source: TreeItem[], dataTransfer: vscode.DataTransfer): void | Thenable<void> {
-		const files = source.filter(s => s.contextValue === 'file').map(s => s.resourceUri?.fsPath || '');
-		dataTransfer.set('application/vnd.code.tree.tabGroupsView', new vscode.DataTransferItem(JSON.stringify(files)));
-	}
-
-	async handleDrop(target: TreeItem | undefined, dataTransfer: vscode.DataTransfer, token: vscode.CancellationToken): Promise<void> {
-		const transferItem = dataTransfer.get('application/vnd.code.tree.tabGroupsView');
-		if (!transferItem) return;
-
-		const fileList: string[] = JSON.parse(await transferItem.asString());
-
-		// Find the target group and file
-		let targetGroup: TabGroup | undefined;
-		let targetIndex = -1;
-
-		if (target && target.contextValue === 'file') {
-			targetGroup = this.groups.find(g => g.files.includes(target.resourceUri?.fsPath || ''));
-			targetIndex = targetGroup?.files.indexOf(target.resourceUri?.fsPath || '') ?? -1;
-		} else if (target && target.contextValue === 'group') {
-			targetGroup = this.groups.find(g => g.label === target.label);
-			targetIndex = targetGroup?.files.length ?? -1;
-		}
-
-		// Only allow manual sorting
-		const sortMode = targetGroup?.sortMode ?? this.getSortMode();
-		if (sortMode !== SortMode.MANUAL) return;
-
-		if (!targetGroup) return;
-
-		// Remove files from all groups first
-		for (const file of fileList) {
-			for (const group of this.groups) {
-				const idx = group.files.indexOf(file);
-				if (idx !== -1) group.files.splice(idx, 1);
-			}
-		}
-
-		// Insert files at the target index
-		if (targetIndex === -1) {
-			targetGroup.files.push(...fileList);
-		} else {
-			targetGroup.files.splice(targetIndex, 0, ...fileList);
-		}
-
-		saveGroups(this.context, this.groups);
-		this.refresh();
-	}
 }
