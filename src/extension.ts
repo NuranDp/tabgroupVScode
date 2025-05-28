@@ -362,7 +362,37 @@ export function activate(context: vscode.ExtensionContext) {
 			} catch (e) {
 				vscode.window.showErrorMessage('Failed to import tab groups: ' + (e instanceof Error ? e.message : e));
 			}
-		})
+		}),
+
+		// Reveal current file in tab groups (TreeView button)
+		vscode.commands.registerCommand('tabgroupview.revealCurrentFileInTabGroups', async () => {
+			const activeEditor = vscode.window.activeTextEditor;
+			if (!activeEditor) {
+				vscode.window.showInformationMessage('No active editor.');
+				return;
+			}
+			const filePath = activeEditor.document.uri.fsPath;
+			let foundGroup: TabGroup | undefined;
+			for (const group of groups) {
+				if (group.files.includes(filePath)) {
+					foundGroup = group;
+					break;
+				}
+			}
+			if (!foundGroup) {
+				vscode.window.showInformationMessage('Current file is not in any tab group.');
+				return;
+			}
+			const fileName = vscode.workspace.asRelativePath(filePath, false).split(/[\\/]/).pop() || filePath;
+			const item = new TreeItem(
+				fileName,
+				vscode.TreeItemCollapsibleState.None,
+				'file',
+				`file:${foundGroup.label}:${filePath}`
+			);
+			item.resourceUri = vscode.Uri.file(filePath);
+			await treeView?.reveal(item, { select: true, focus: true, expand: true });
+		}),
 	);
 }
 

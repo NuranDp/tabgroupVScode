@@ -99,6 +99,11 @@
           "command": "tabgroupview.importGroups",
           "when": "view == tabGroupsView",
           "group": "navigation"
+        },
+        {
+          "command": "tabgroupview.revealCurrentFileInTabGroups",
+          "when": "view == tabGroupsView",
+          "group": "navigation"
         }
       ],
       "editor/title/context": [
@@ -173,6 +178,11 @@
         "command": "tabgroupview.importGroups",
         "title": "Import Tab Groups",
         "icon": "$(cloud-download)"
+      },
+      {
+        "command": "tabgroupview.revealCurrentFileInTabGroups",
+        "title": "Reveal Current File in Tab Groups",
+        "icon": "$(location)"
       }
     ],
     "keybindings": [
